@@ -9,12 +9,13 @@ public class Service{
     
     public static void main(String[] args){
         path = System.getProperty("user.dir");
-        output_path = args[2];
         //---------------------------------------------------
         if(args.length < 3){
+            output_path = "output.json";
             generateError("Недостаточно аргументов");
             return;
         }
+        output_path = args[2];
         //------------------------------------------
         File input = new File(path + "/" + args[1]);
         if(!input.exists()){
