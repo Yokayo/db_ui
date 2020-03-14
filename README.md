@@ -18,7 +18,7 @@ mvn clean compile assembly:single
 ## Примеры
 *java -jar test-1.0-SNAPSHOT-jar-with-dependencies.jar search input.json search_output.json*
 
-Поиск по критериям из файла input.json с занесением результата в файл search_output.json
+Поиск по критериям из файла input.json с занесением результата в файл search_output.json.
 
 *java -jar test-1.0-SNAPSHOT-jar-with-dependencies.jar stat input.json stats_output.json*
 
