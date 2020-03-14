@@ -68,10 +68,10 @@ public class Service{
                     String[] criteria_types = new String[4];
                     criteria_types[0] = criteria.getString("lastName", null);
                     criteria_types[1] = criteria.getString("productName", null);
-                    criteria_types[2] = criteria.getString("minExpenses", null);
-                    criteria_types[3] = criteria.getString("badCustomers", null);
+                    criteria_types[2] = String.valueOf(criteria.getInt("minExpenses", -1));
+                    criteria_types[3] = String.valueOf(criteria.getInt("badCustomers", -1));
                     for(int b = 0; b < criteria_types.length; b++){ // выясняем тип критерия (либо его отсутствие)
-                        if(criteria_types[b] != null){
+                        if(criteria_types[b] != null && !criteria_types[b].equals("-1")){
                             criteria_types_provided[a] = b;
                             break;
                         }
@@ -82,50 +82,24 @@ public class Service{
                     }
                     switch(criteria_types_provided[a]){ // валидация для каждого критерия в отдельности
                         case 1:
-                            String minTimes;
+                            int minTimes;
                             try{
-                                minTimes = criteria.getString("minTimes");
-                            }catch(NullPointerException e){
+                                minTimes = criteria.getInt("minTimes");
+                            }catch(Exception e){
                                 generateError("Критерий #" + (a+1) + ": не указано число раз (minTimes)");
-                                return;
-                            }
-                            long times;
-                            try{
-                                times = Long.parseLong(minTimes);
-                            }catch(NumberFormatException e){
-                                generateError("Критерий #" + (a+1) + ": неправильное значение minTimes");
                                 return;
                             }
                             break;
                         case 2:
+                            int maxExpenses;
                             try{
-                                long minExp = Long.parseLong(criteria_types[2]);
-                            }catch(NumberFormatException e){
-                                generateError("Критерий #" + (a+1) + ": неправильное значение minExpenses");
-                                return;
-                            }
-                            String maxExpenses;
-                            try{
-                                maxExpenses = criteria.getString("maxExpenses");
-                            }catch(NullPointerException e){
+                                maxExpenses = criteria.getInt("maxExpenses");
+                            }catch(Exception e){
                                 generateError("Критерий #" + (a+1) + ": не указаны максимальные расходы (maxExpenses)");
-                                return;
-                            }
-                            long maxExp;
-                            try{
-                                maxExp = Long.parseLong(maxExpenses);
-                            }catch(NumberFormatException e){
-                                generateError("Критерий #" + (a+1) + ": неправильное значение maxExpenses");
                                 return;
                             }
                             break;
                         case 3:
-                            try{
-                                long badCustomers = Long.parseLong(criteria_types[3]);
-                            }catch(NumberFormatException e){
-                                generateError("Критерий #" + (a+1) + ": неправильное значение badCustomers");
-                                return;
-                            }
                             break;
                     }
                 }
@@ -146,34 +120,31 @@ public class Service{
                         JsonArrayBuilder fetched_results_list = Json.createArrayBuilder();
                         Statement st = con.createStatement();
                         ResultSet rs = null;
-                        JsonObject current_criteria;
+                        JsonObject current_criteria = criterias.get(a);
                         switch(criteria_types_provided[a]){
                             case 0:
                                 rs = st.executeQuery("SELECT * FROM Customers WHERE lastName='" + criterias.get(a).getString("lastName") + "'");
                                 break;
                             //--------
                             case 1:
-                                current_criteria = criterias.get(a);
-                                rs = st.executeQuery("SELECT DISTINCT firstName, lastName FROM Customers WHERE ("
+                                rs = st.executeQuery("SELECT DISTINCT CustomerID, firstName, lastName FROM Customers WHERE ("
                                     + "SELECT COUNT(*) FROM Purchases WHERE Purchases.CustomerID=Customers.CustomerID AND thingType='" + current_criteria.getString("productName") + "'"
-                                + ") >= " + current_criteria.getString("minTimes"));
+                                + ") >= " + current_criteria.getInt("minTimes"));
                                 break;
                             //--------
                             case 2:
-                                current_criteria = criterias.get(a);
-                                rs = st.executeQuery("SELECT DISTINCT firstName, lastName FROM Customers WHERE ("
+                                rs = st.executeQuery("SELECT DISTINCT CustomerID, firstName, lastName FROM Customers WHERE ("
                                     + "SELECT SUM(price) FROM Purchases INNER JOIN Goods ON Purchases.thingType=Goods.thingType WHERE Purchases.CustomerID=Customers.CustomerID"
-                                + ") BETWEEN " + current_criteria.getString("minExpenses") + " AND " + current_criteria.getString("maxExpenses"));
+                                + ") BETWEEN " + current_criteria.getInt("minExpenses") + " AND " + current_criteria.getInt("maxExpenses"));
                                 
                                 break;
                             //--------
                             case 3:
-                                current_criteria = criterias.get(a);
                                 rs = st.executeQuery("SELECT firstName, lastName FROM ("
                                     + "SELECT firstName, lastName, ("
                                     + "SELECT SUM(price) FROM Purchases INNER JOIN Goods ON Goods.thingType=Purchases.thingType WHERE Purchases.CustomerID=Customers.CustomerID"
                                     + ") AS spent FROM Customers ORDER BY spent"
-                                    + ") AS Subquery FETCH FIRST " + current_criteria.getString("badCustomers") + " ROWS ONLY");
+                                    + ") AS Subquery FETCH FIRST " + current_criteria.getInt("badCustomers") + " ROWS ONLY");
                                 break;
                             //--------
                             default:
