@@ -24,7 +24,7 @@ public class Service{
         JsonReader reader;
         Properties connection_props = new Properties();
         connection_props.put("user", "postgres");
-        connection_props.put("password", "your_password");
+        connection_props.put("password", "password_here");
         JsonObjectBuilder result_builder;
         JsonArrayBuilder result_set_builder;
         JsonWriter writer;
@@ -225,7 +225,7 @@ public class Service{
                     generateError("Неверно отформатированы входные данные");
                     return;
                 }catch(JsonException e){
-                    generateError("Ошибка при чтении входного файла: " + e.toString());
+                    generateError("Ошибка при чтении входного файла");
                     return;
                 }
                 //--------------
@@ -289,7 +289,7 @@ public class Service{
                         +" GROUP BY Purchases.CustomerID, Purchases.thingType, Customers.firstName, Customers.lastName"
                         +" ORDER BY CustomerID, spent");
                 }catch(Exception e){
-                    generateError("Ошибка при выполнении запроса: " + e.toString());
+                    generateError("Ошибка при выполнении запроса");
                     return;
                 }
                 int current_customerID, previous_customerID;
@@ -331,7 +331,7 @@ public class Service{
                             break;
                     }
                 }catch(Exception e){
-                    generateError("Ошибка при обработке данных: " + e.toString());
+                    generateError("Ошибка при обработке данных");
                     e.printStackTrace();
                     return;
                 }
