@@ -4,9 +4,9 @@ import javax.json.*;
 import java.sql.*;
 
 public class Service{
-
+    
     static String path, output_path;
-
+    
     public static void main(String[] args){
         path = System.getProperty("user.dir");
         output_path = args[2];
@@ -21,11 +21,18 @@ public class Service{
             generateError("Входной файл не найден");
             return;
         }
+        JsonReader reader;
+        Properties connection_props = new Properties();
+        connection_props.put("user", "postgres");
+        connection_props.put("password", "your_password");
+        JsonObjectBuilder result_builder;
+        JsonArrayBuilder result_set_builder;
+        JsonWriter writer;
         //---------------------------------------------
+        Connection con;
         switch(args[0]){
             case "search":
                 JsonArray criterias_raw;
-                JsonReader reader;
                 //-------------
                 try{
                     reader = Json.createReader(new BufferedReader(new InputStreamReader(new FileInputStream(input), "UTF-8")));
@@ -122,19 +129,15 @@ public class Service{
                     }
                 }
                 //------------------
-                Properties connection_props = new Properties();
-                connection_props.put("user", "postgres");
-                connection_props.put("password", "your_password_here");
-                Connection con;
                 try{
                     con = DriverManager.getConnection("jdbc:postgresql://localhost:5432/postgres", connection_props);
                 }catch(Exception e){
                     generateError("Не удалось подключиться к БД");
                     return;
                 }
-                JsonObjectBuilder result_builder = Json.createObjectBuilder();
+                result_builder = Json.createObjectBuilder();
                 result_builder.add("type", "search");
-                JsonArrayBuilder result_set_builder = Json.createArrayBuilder(); // нужно добавить к итоговому JSON ("results")
+                result_set_builder = Json.createArrayBuilder(); // нужно добавить к итоговому JSON ("results")
                 for(int a = 0; a < criterias.size(); a++){
                     try{
                         JsonObjectBuilder current_result_builder = Json.createObjectBuilder();
@@ -160,7 +163,7 @@ public class Service{
                                 rs = st.executeQuery("SELECT DISTINCT firstName, lastName FROM Customers WHERE ("
                                     + "SELECT SUM(price) FROM Purchases INNER JOIN Goods ON Purchases.thingType=Goods.thingType WHERE Purchases.CustomerID=Customers.CustomerID"
                                 + ") BETWEEN " + current_criteria.getString("minExpenses") + " AND " + current_criteria.getString("maxExpenses"));
-
+                                
                                 break;
                             //--------
                             case 3:
@@ -203,27 +206,166 @@ public class Service{
                     generateError("Не удалось закрыть соединение с БД");
                     return;
                 }
-                File output = new File(path + "/" + output_path);
-                JsonWriter writer;
-                try{
-                    output.createNewFile();
-                    writer = Json.createWriter(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(output), "UTF-8")));
-                }catch(IOException e){
-                    generateError("Не удалось создать выходной файл с готовыми данными");
-                    return;
-                }
-                writer.write(result_builder.build());
-                writer.close();
+                writeOutputJSON(result_builder);
                 break;
             case "stat":
-
+                JsonObject dates_range;
+                //-------------
+                try{
+                    reader = Json.createReader(new BufferedReader(new InputStreamReader(new FileInputStream(input), "UTF-8")));
+                }catch(Exception e){
+                    generateError("Невозможно открыть файл");
+                    return;
+                }
+                //-------------
+                try{
+                    dates_range = reader.readObject();
+                    reader.close();
+                }catch(javax.json.stream.JsonParsingException e){
+                    generateError("Неверно отформатированы входные данные");
+                    return;
+                }catch(JsonException e){
+                    generateError("Ошибка при чтении входного файла: " + e.toString());
+                    return;
+                }
+                //--------------
+                String min_date, max_date;
+                try{
+                    min_date = dates_range.getString("startDate");
+                    max_date = dates_range.getString("endDate");
+                }catch(Exception e){
+                    generateError("Не указана начальная/конечная дата");
+                    return;
+                }
+                String[] date_split = min_date.split("\\.");
+                if(date_split.length != 3){
+                    generateError("Неверно отформатирована начальная дата (формат: гггг.мм.дд)");
+                    return;
+                }
+                int start_year, start_month, start_day, end_year, end_month, end_day;
+                try{
+                    start_year = Integer.parseInt(date_split[0]);
+                    start_month = Integer.parseInt(date_split[1]);
+                    start_day = Integer.parseInt(date_split[2]);
+                }catch(NumberFormatException e){
+                    generateError("Неправильно отформатирована начальная дата: год, месяц или день не является числом");
+                    return;
+                }
+                date_split = max_date.split("\\.");
+                if(date_split.length != 3){
+                    generateError("Неверно отформатирована конечная дата (формат: гггг.мм.дд)");
+                    return;
+                }
+                try{
+                    end_year = Integer.parseInt(date_split[0]);
+                    end_month = Integer.parseInt(date_split[1]);
+                    end_day = Integer.parseInt(date_split[2]);
+                }catch(NumberFormatException e){
+                    generateError("Неправильно отформатирована конечная дата: год, месяц или день не является числом");
+                    return;
+                }
+                try{
+                    con = DriverManager.getConnection("jdbc:postgresql://localhost:5432/postgres", connection_props);
+                }catch(Exception e){
+                    generateError("Не удалось подключиться к БД");
+                    return;
+                }
+                result_builder = Json.createObjectBuilder();
+                result_builder.add("type", "stat");
+                result_set_builder = Json.createArrayBuilder(); // нужно добавить к итоговому JSON ("results")
+                ResultSet rs;
+                try{
+                    Statement st = con.createStatement();
+                    rs = st.executeQuery("SELECT Purchases.thingType,"
+                        +" COUNT(Purchases.thingType)*MAX(Goods.price) AS spent,"
+                        +" Purchases.CustomerID,"
+                        +" Customers.firstName,"
+                        +" Customers.lastName,"
+                        +" (SELECT COUNT(DISTINCT purchaseDate) AS daysCount FROM Purchases WHERE NOT purchaseWeekday IN ('Суб', 'Вск') AND purchaseDate BETWEEN '" + min_date + "' AND '" + max_date + "')"
+                        +" FROM Purchases"
+                        +" INNER JOIN Goods ON Goods.thingType=Purchases.thingType"
+                        +" RIGHT JOIN Customers ON Customers.CustomerID=Purchases.CustomerID"
+                        +" WHERE NOT purchaseWeekday IN('Суб', 'Вск') AND purchaseDate BETWEEN '" + min_date + "' AND '" + max_date + "'"
+                        +" GROUP BY Purchases.CustomerID, Purchases.thingType, Customers.firstName, Customers.lastName"
+                        +" ORDER BY CustomerID, spent");
+                }catch(Exception e){
+                    generateError("Ошибка при выполнении запроса: " + e.toString());
+                    return;
+                }
+                int current_customerID, previous_customerID;
+                long spent_by_all_customers = 0L;
+                int customers_count = 0;
+                JsonArrayBuilder customers_array = Json.createArrayBuilder(); // добавить в результат как "customers"
+                try{
+                    if(!rs.next()){
+                        generateError("Результат пуст");
+                        return;
+                    }
+                    result_builder.add("totalDays", rs.getInt("daysCount"));
+                    boolean finish_processing = false;
+                    while(true){
+                        current_customerID = rs.getInt("CustomerID");
+                        previous_customerID = current_customerID;
+                        JsonObjectBuilder current_customer = Json.createObjectBuilder();
+                        current_customer.add("name", rs.getString("lastName") + " " + rs.getString("firstName"));
+                        JsonArrayBuilder expenses_array = Json.createArrayBuilder();
+                        int overall = 0;
+                        while(current_customerID == previous_customerID){
+                            JsonObjectBuilder current_exp = Json.createObjectBuilder();
+                            current_exp.add("name", rs.getString("thingType"));
+                            current_exp.add("expenses", rs.getString("spent"));
+                            overall += Integer.parseInt(rs.getString("spent"));
+                            expenses_array.add(current_exp.build());
+                            if(!rs.next()){
+                                finish_processing = true;
+                                break;
+                            }
+                            current_customerID = rs.getInt("CustomerID");
+                        }
+                        current_customer.add("purchases", expenses_array.build());
+                        current_customer.add("totalExpenses", overall);
+                        customers_array.add(current_customer.build());
+                        spent_by_all_customers += overall;
+                        customers_count ++;
+                        if(finish_processing)
+                            break;
+                    }
+                }catch(Exception e){
+                    generateError("Ошибка при обработке данных: " + e.toString());
+                    e.printStackTrace();
+                    return;
+                }
+                result_builder.add("customers", customers_array.build());
+                result_builder.add("totalExpenses", spent_by_all_customers);
+                result_builder.add("avgExpenses", (float) spent_by_all_customers/customers_count);
+                try{
+                    con.close();
+                }catch(Exception e){
+                    generateError("Не удалось закрыть соединение с БД");
+                    return;
+                }
+                writeOutputJSON(result_builder);
+                break;
+            default:
+                generateError("Неизвестная операция");
+                return;
         }
     }
-
-    private static void writeOutputJSON(JsonObject object){
+    
+    private static void writeOutputJSON(JsonObjectBuilder object){
         File output = new File(path + "/" + output_path);
+        JsonWriter writer;
+        try{
+            output.createNewFile();
+            writer = Json.createWriter(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(output), "UTF-8")));
+        }catch(IOException e){
+            generateError("Не удалось создать выходной файл с готовыми данными");
+            return;
+        }
+        writer.write(object.build());
+        writer.close();
     }
-
+    
     private static void generateError(String error){
         File output = new File(path + "/" + output_path);
         JsonObjectBuilder builder = Json.createObjectBuilder();
@@ -242,5 +384,5 @@ public class Service{
         writer.close();
         return;
     }
-
-} 
+    
+}
